@@ -4,7 +4,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Phone, Mail, MessageCircle, MapPin, Upload } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
-import { supabase } from "@/integrations/supabase/client";
+import api from "@/lib/api";
 import { z } from "zod";
 import { useNavigate } from "react-router-dom";
 
@@ -30,16 +30,7 @@ const Contact = () => {
     try {
       const validated = enquirySchema.parse(formData);
       
-      const { error } = await supabase
-        .from("enquiries")
-        .insert({
-          name: validated.name,
-          phone: validated.phone,
-          email: validated.email || null,
-          message: validated.message,
-        });
-
-      if (error) throw error;
+      await api.post('/enquiries', { name: validated.name, phone: validated.phone, email: validated.email || undefined, message: validated.message });
       
       // Send to WhatsApp and stay on same page
       const whatsappMessage = encodeURIComponent(
