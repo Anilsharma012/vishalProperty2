@@ -5,21 +5,18 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card } from "@/components/ui/card";
 import { toast } from "sonner";
-import { supabase } from "@/integrations/supabase/client";
+import { api } from "@/services/api";
 import { useNavigate } from "react-router-dom";
 import { z } from "zod";
 
 const propertySchema = z.object({
   title: z.string().trim().min(5, "Title must be at least 5 characters").max(200),
   description: z.string().trim().min(20, "Description must be at least 20 characters").max(2000),
-  property_type: z.enum(["flat", "plot", "commercial", "rental"]),
+  propertyType: z.enum(["Apartment", "House", "Plot", "Commercial", "Rent"]),
   location: z.string().trim().min(3, "Location is required").max(200),
-  sector: z.string().trim().max(100).optional(),
   area: z.number().positive("Area must be positive"),
-  area_unit: z.string().min(1, "Area unit is required"),
   price: z.number().positive("Price must be positive"),
-  features: z.array(z.string()).optional(),
-  map_link: z.string().url("Invalid URL").optional().or(z.literal("")),
+  ownerContact: z.string().min(10, "Valid phone number required"),
 });
 
 const PropertySubmissionForm = () => {
@@ -27,14 +24,12 @@ const PropertySubmissionForm = () => {
   const [formData, setFormData] = useState({
     title: "",
     description: "",
-    property_type: "flat",
+    propertyType: "Apartment",
     location: "",
-    sector: "",
     area: "",
-    area_unit: "sq ft",
     price: "",
-    features: "",
-    map_link: "",
+    ownerContact: "",
+    images: [] as string[],
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -43,62 +38,51 @@ const PropertySubmissionForm = () => {
     setIsSubmitting(true);
 
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        toast.error("You must be logged in to submit a property");
-        navigate("/auth");
-        return;
-      }
-
       const validated = propertySchema.parse({
         title: formData.title,
         description: formData.description,
-        property_type: formData.property_type,
+        propertyType: formData.propertyType,
         location: formData.location,
-        sector: formData.sector || null,
         area: parseFloat(formData.area),
-        area_unit: formData.area_unit,
         price: parseFloat(formData.price),
-        features: formData.features ? formData.features.split(",").map(f => f.trim()) : [],
-        map_link: formData.map_link || null,
+        ownerContact: formData.ownerContact,
       });
 
-      const { error } = await supabase
-        .from("property_submissions")
-        .insert({
-          user_id: user.id,
-          title: validated.title,
-          description: validated.description,
-          property_type: validated.property_type,
-          location: validated.location,
-          sector: validated.sector,
-          area: validated.area,
-          area_unit: validated.area_unit,
-          price: validated.price,
-          features: validated.features,
-        });
+      const slug = validated.title.toLowerCase().replace(/\s+/g, '-');
 
-      if (error) throw error;
+      await api.createProperty({
+        title: validated.title,
+        slug: slug,
+        description: validated.description,
+        propertyType: validated.propertyType,
+        location: validated.location,
+        area: validated.area,
+        price: validated.price,
+        ownerContact: validated.ownerContact,
+        status: "draft",
+        images: formData.images,
+        features: [],
+      });
 
       toast.success("Property submitted successfully! Awaiting admin approval.");
       setFormData({
         title: "",
         description: "",
-        property_type: "flat",
+        propertyType: "Apartment",
         location: "",
-        sector: "",
         area: "",
-        area_unit: "sq ft",
         price: "",
-        features: "",
-        map_link: "",
+        ownerContact: "",
+        images: [],
       });
     } catch (error: any) {
-      if (error.errors) {
-        toast.error(error.errors[0].message);
-      } else {
-        toast.error("Failed to submit property. Please try again.");
+      let errorMsg = "Failed to submit property. Please try again.";
+      if (error instanceof z.ZodError) {
+        errorMsg = error.errors[0]?.message || errorMsg;
+      } else if (error.message) {
+        errorMsg = error.message;
       }
+      toast.error(errorMsg);
     } finally {
       setIsSubmitting(false);
     }
@@ -133,17 +117,18 @@ const PropertySubmissionForm = () => {
           <div>
             <label className="text-sm font-medium mb-2 block">Property Type</label>
             <Select
-              value={formData.property_type}
-              onValueChange={(value) => setFormData({ ...formData, property_type: value })}
+              value={formData.propertyType}
+              onValueChange={(value) => setFormData({ ...formData, propertyType: value as any })}
             >
               <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="flat">Flat</SelectItem>
-                <SelectItem value="plot">Plot</SelectItem>
-                <SelectItem value="commercial">Commercial</SelectItem>
-                <SelectItem value="rental">Rental</SelectItem>
+                <SelectItem value="Apartment">Apartment</SelectItem>
+                <SelectItem value="House">House</SelectItem>
+                <SelectItem value="Plot">Plot</SelectItem>
+                <SelectItem value="Commercial">Commercial</SelectItem>
+                <SelectItem value="Rent">Rent</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -161,15 +146,6 @@ const PropertySubmissionForm = () => {
 
         <div className="grid md:grid-cols-2 gap-4">
           <div>
-            <label className="text-sm font-medium mb-2 block">Sector (Optional)</label>
-            <Input
-              placeholder="e.g., Sector 36"
-              value={formData.sector}
-              onChange={(e) => setFormData({ ...formData, sector: e.target.value })}
-            />
-          </div>
-
-          <div>
             <label className="text-sm font-medium mb-2 block">Price (₹)</label>
             <Input
               type="number"
@@ -179,11 +155,9 @@ const PropertySubmissionForm = () => {
               required
             />
           </div>
-        </div>
 
-        <div className="grid md:grid-cols-2 gap-4">
           <div>
-            <label className="text-sm font-medium mb-2 block">Area</label>
+            <label className="text-sm font-medium mb-2 block">Area (sq ft)</label>
             <Input
               type="number"
               placeholder="e.g., 1500"
@@ -192,41 +166,15 @@ const PropertySubmissionForm = () => {
               required
             />
           </div>
-
-          <div>
-            <label className="text-sm font-medium mb-2 block">Area Unit</label>
-            <Select
-              value={formData.area_unit}
-              onValueChange={(value) => setFormData({ ...formData, area_unit: value })}
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="sq ft">Square Feet</SelectItem>
-                <SelectItem value="sq yd">Square Yards</SelectItem>
-                <SelectItem value="sq m">Square Meters</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
         </div>
 
         <div>
-          <label className="text-sm font-medium mb-2 block">Features (comma-separated)</label>
+          <label className="text-sm font-medium mb-2 block">Contact Number</label>
           <Input
-            placeholder="e.g., Parking, Garden, Gym"
-            value={formData.features}
-            onChange={(e) => setFormData({ ...formData, features: e.target.value })}
-          />
-        </div>
-
-        <div>
-          <label className="text-sm font-medium mb-2 block">Map Link (Optional)</label>
-          <Input
-            type="url"
-            placeholder="Google Maps link"
-            value={formData.map_link}
-            onChange={(e) => setFormData({ ...formData, map_link: e.target.value })}
+            placeholder="e.g., 9876543210"
+            value={formData.ownerContact}
+            onChange={(e) => setFormData({ ...formData, ownerContact: e.target.value })}
+            required
           />
         </div>
 
