@@ -1,16 +1,14 @@
 import { Link } from 'react-router-dom';
-import { useSupabaseAuth } from '@/hooks/useSupabaseAuth';
 import { Button } from '@/components/ui/button';
 import { LogOut, Home, Settings } from 'lucide-react';
+import { useAuth } from '@/hooks/useAuth';
 
 export function Navbar() {
-  const { user, logout } = useSupabaseAuth();
+  const { user, signOut } = useAuth();
 
   const handleLogout = async () => {
-    const result = await logout();
-    if (result.success) {
-      window.location.href = '/';
-    }
+    await signOut();
+    window.location.href = '/';
   };
 
   return (
@@ -22,9 +20,6 @@ export function Navbar() {
         </Link>
 
         <div className="flex items-center gap-6">
-          <Link to="/connect-supabase" className="text-gray-700 hover:text-blue-600 text-sm font-medium">
-            Supabase Test
-          </Link>
           <Link to="/properties" className="text-gray-700 hover:text-blue-600 text-sm font-medium">
             Browse Properties
           </Link>
@@ -35,12 +30,7 @@ export function Navbar() {
                 <Settings size={16} />
                 Admin
               </Link>
-              <Button
-                onClick={handleLogout}
-                variant="ghost"
-                size="sm"
-                className="gap-2"
-              >
+              <Button onClick={handleLogout} variant="ghost" size="sm" className="gap-2">
                 <LogOut size={16} />
                 Logout
               </Button>

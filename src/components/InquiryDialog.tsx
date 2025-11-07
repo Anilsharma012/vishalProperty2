@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
-import { supabase } from "@/integrations/supabase/client";
+import api from "@/lib/api";
 import { z } from "zod";
 
 interface InquiryDialogProps {
@@ -35,16 +35,7 @@ const InquiryDialog = ({ open, onOpenChange }: InquiryDialogProps) => {
     try {
       const validated = enquirySchema.parse(formData);
       
-      const { error } = await supabase
-        .from("enquiries")
-        .insert({
-          name: validated.name,
-          phone: validated.phone,
-          email: validated.email || null,
-          message: validated.message,
-        });
-
-      if (error) throw error;
+      await api.post('/enquiries', { name: validated.name, phone: validated.phone, email: validated.email || undefined, message: validated.message });
       
       const whatsappMessage = encodeURIComponent(
         `New Enquiry:\nName: ${validated.name}\nPhone: ${validated.phone}\nEmail: ${validated.email}\nMessage: ${validated.message}`
