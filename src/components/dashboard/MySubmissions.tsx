@@ -1,43 +1,37 @@
 import { useEffect, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { supabase } from "@/integrations/supabase/client";
+import { api } from "@/services/api";
+import { useAuthApi } from "@/hooks/useAuthApi";
 import { toast } from "sonner";
 
 interface Submission {
-  id: string;
+  _id: string;
   title: string;
-  property_type: string;
+  propertyType: string;
   location: string;
   price: number;
-  area: number;
-  area_unit: string;
+  area?: number;
   status: string;
-  created_at: string;
-  admin_notes?: string;
+  createdAt: string;
+  description?: string;
 }
 
 const MySubmissions = () => {
+  const { user } = useAuthApi();
   const [submissions, setSubmissions] = useState<Submission[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetchSubmissions();
-  }, []);
+    if (user) {
+      fetchSubmissions();
+    }
+  }, [user]);
 
   const fetchSubmissions = async () => {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-
-      const { data, error } = await supabase
-        .from("property_submissions")
-        .select("*")
-        .eq("user_id", user.id)
-        .order("created_at", { ascending: false });
-
-      if (error) throw error;
-      setSubmissions(data || []);
+      const response = await api.getAdminProperties();
+      setSubmissions(response.data || []);
     } catch (error) {
       console.error("Error fetching submissions:", error);
       toast.error("Failed to load submissions");
@@ -48,9 +42,9 @@ const MySubmissions = () => {
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case "approved":
+      case "active":
         return "bg-green-500";
-      case "rejected":
+      case "sold":
         return "bg-red-500";
       default:
         return "bg-yellow-500";
@@ -65,7 +59,7 @@ const MySubmissions = () => {
   };
 
   if (loading) {
-    return <div className="text-center py-8">Loading your submissions...</div>;
+    return <div className="text-center py-8">Loading your properties...</div>;
   }
 
   if (submissions.length === 0) {
@@ -78,14 +72,14 @@ const MySubmissions = () => {
 
   return (
     <div className="space-y-4">
-      <h2 className="text-2xl font-bold mb-4">My Property Submissions</h2>
+      <h2 className="text-2xl font-bold mb-4">My Properties</h2>
       {submissions.map((submission) => (
-        <Card key={submission.id} className="p-6">
+        <Card key={submission._id} className="p-6">
           <div className="flex justify-between items-start mb-4">
             <div>
               <h3 className="text-xl font-bold mb-2">{submission.title}</h3>
               <p className="text-sm text-muted-foreground">
-                {submission.location} • {submission.area} {submission.area_unit}
+                {submission.location} {submission.area && `• ${submission.area} sq ft`}
               </p>
             </div>
             <Badge className={getStatusColor(submission.status)}>
@@ -96,7 +90,7 @@ const MySubmissions = () => {
           <div className="grid grid-cols-2 gap-4 mb-4">
             <div>
               <p className="text-sm text-muted-foreground">Type</p>
-              <p className="font-medium capitalize">{submission.property_type}</p>
+              <p className="font-medium capitalize">{submission.propertyType}</p>
             </div>
             <div>
               <p className="text-sm text-muted-foreground">Price</p>
@@ -104,15 +98,14 @@ const MySubmissions = () => {
             </div>
           </div>
 
-          {submission.admin_notes && (
-            <div className="bg-muted p-3 rounded-lg">
-              <p className="text-sm font-medium mb-1">Admin Notes:</p>
-              <p className="text-sm text-muted-foreground">{submission.admin_notes}</p>
+          {submission.description && (
+            <div className="bg-muted p-3 rounded-lg mb-4">
+              <p className="text-sm line-clamp-2 text-muted-foreground">{submission.description}</p>
             </div>
           )}
 
-          <p className="text-xs text-muted-foreground mt-4">
-            Submitted on {new Date(submission.created_at).toLocaleDateString()}
+          <p className="text-xs text-muted-foreground">
+            Submitted on {new Date(submission.createdAt).toLocaleDateString()}
           </p>
         </Card>
       ))}
