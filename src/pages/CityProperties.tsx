@@ -1,25 +1,25 @@
 import { useState, useEffect } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
-import { supabase } from '@/integrations/supabase/client';
+import { api } from '@/services/api';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
 import WhatsAppFloat from '@/components/WhatsAppFloat';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { MapPin, Home, Maximize, IndianRupee, ArrowLeft, MessageCircle, Phone } from 'lucide-react';
+import { toast } from 'sonner';
 
 interface Property {
-  id: string;
+  _id: string;
   title: string;
   description?: string;
   price: number;
   location: string;
-  area: number;
-  area_unit: string;
-  property_type: string;
+  area?: number;
+  propertyType: string;
   status: string;
   images: string[];
-  sector?: string;
+  city?: string;
 }
 
 const CityProperties = () => {
@@ -35,22 +35,16 @@ const CityProperties = () => {
   const fetchProperties = async () => {
     setLoading(true);
     try {
-      let query = supabase
-        .from("properties")
-        .select("*")
-        .eq("status", "available");
-
-      // Filter by city (location contains city name)
       if (city && city !== "all") {
-        query = query.ilike('location', `%${city}%`);
+        const response = await api.getPropertiesByCity(city);
+        setProperties(response.data);
+      } else {
+        const response = await api.getProperties('active');
+        setProperties(response.data);
       }
-
-      const { data, error } = await query.order('created_at', { ascending: false });
-      if (error) throw error;
-      
-      setProperties(data || []);
-    } catch (error) {
-      console.error("Error fetching properties:", error);
+    } catch (error: any) {
+      toast.error('Failed to load properties');
+      console.error(error);
     } finally {
       setLoading(false);
     }
@@ -101,86 +95,84 @@ const CityProperties = () => {
           </div>
         ) : properties.length === 0 ? (
           <div className="text-center py-12">
-            <p className="text-muted-foreground">No properties found in this city</p>
+            <p className="text-muted-foreground">No properties found in {getCityTitle()}</p>
           </div>
         ) : (
           <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
             {properties.map((property) => (
-              <Card key={property.id} className="overflow-hidden hover:shadow-xl transition-shadow duration-300">
-                <div className="relative h-64 overflow-hidden group">
-                  <img 
-                    src={property.images?.[0] || "https://images.unsplash.com/photo-1545324418-cc1a3fa10c00?w=800&h=600&fit=crop"} 
-                    alt={property.title}
-                    className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300"
-                  />
-                  <div className="absolute top-4 right-4">
-                    <span className="bg-primary text-primary-foreground px-3 py-1 rounded-full text-sm font-medium">
-                      Available
+              <Card key={property._id} className="overflow-hidden hover:shadow-lg transition">
+                {/* Image */}
+                {property.images?.[0] && (
+                  <div className="relative h-64 bg-gray-200 overflow-hidden">
+                    <img
+                      src={property.images[0]}
+                      alt={property.title}
+                      className="w-full h-full object-cover hover:scale-105 transition"
+                    />
+                  </div>
+                )}
+
+                {/* Content */}
+                <div className="p-6 space-y-4">
+                  <div>
+                    <h3 className="text-xl font-bold line-clamp-2 hover:text-primary cursor-pointer">
+                      {property.title}
+                    </h3>
+                    <p className="text-sm text-gray-600 flex items-center gap-1 mt-2">
+                      <MapPin size={16} />
+                      {property.location}
+                    </p>
+                  </div>
+
+                  {/* Specs */}
+                  <div className="flex gap-4 text-sm text-gray-600">
+                    {property.area && (
+                      <span className="flex items-center gap-1">
+                        <Maximize size={16} />
+                        {property.area} sq ft
+                      </span>
+                    )}
+                    <span className="flex items-center gap-1">
+                      <Home size={16} />
+                      {property.propertyType}
                     </span>
                   </div>
-                </div>
-                
-                <div className="p-6">
-                  <h3 className="text-xl font-bold mb-2 line-clamp-2">{property.title}</h3>
-                  <div className="flex items-center text-muted-foreground mb-2">
-                    <MapPin className="h-4 w-4 mr-1 flex-shrink-0" />
-                    <span className="text-sm">{property.location}</span>
-                  </div>
-                  {property.sector && (
-                    <p className="text-sm text-muted-foreground mb-4">Sector {property.sector}</p>
-                  )}
 
-                  {property.description && (
-                    <p className="text-sm text-muted-foreground mb-4 line-clamp-2">
-                      {property.description}
+                  {/* Price */}
+                  <div className="border-t pt-3">
+                    <p className="text-2xl font-bold text-green-600 flex items-center gap-1">
+                      <IndianRupee size={20} />
+                      {formatPrice(property.price)}
                     </p>
-                  )}
-
-                  <div className="grid grid-cols-2 gap-4 mb-6">
-                    <div className="flex items-center gap-2">
-                      <Maximize className="h-4 w-4 text-primary" />
-                      <span className="text-sm">{property.area} {property.area_unit}</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Home className="h-4 w-4 text-primary" />
-                      <span className="text-sm capitalize">{property.property_type}</span>
-                    </div>
                   </div>
 
-                  <div className="flex items-center justify-between pt-4 border-t mb-4">
-                    <div className="flex items-center gap-1">
-                      <IndianRupee className="h-5 w-5 text-secondary" />
-                      <span className="text-2xl font-bold text-secondary">{formatPrice(property.price)}</span>
-                    </div>
-                  </div>
-
+                  {/* Actions */}
                   <div className="grid grid-cols-2 gap-2">
-                    <Button 
-                      onClick={() => handleWhatsAppEnquiry(property.title)}
+                    <Button
                       size="sm"
-                      className="bg-green-600 hover:bg-green-700 gap-2"
+                      className="gap-1"
+                      onClick={() => handleWhatsAppEnquiry(property.title)}
                     >
-                      <MessageCircle className="h-4 w-4" />
+                      <MessageCircle size={14} />
                       WhatsApp
                     </Button>
-                    <Button 
-                      onClick={handleCallNow}
-                      variant="outline"
+                    <Button
                       size="sm"
-                      className="gap-2"
+                      variant="outline"
+                      onClick={handleCallNow}
+                      className="gap-1"
                     >
-                      <Phone className="h-4 w-4" />
+                      <Phone size={14} />
                       Call
                     </Button>
                   </div>
 
                   <Button
                     variant="outline"
-                    size="sm"
-                    asChild
-                    className="w-full mt-2"
+                    className="w-full"
+                    onClick={() => navigate(`/property/${property._id}`)}
                   >
-                    <Link to={`/property/${property.id}`}>View Details</Link>
+                    View Details
                   </Button>
                 </div>
               </Card>
