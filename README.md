@@ -71,3 +71,64 @@ Yes, you can!
 To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
 
 Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
+
+---
+
+# MERN Property Management (Monorepo)
+
+A full-stack property management system using MongoDB, Express, React, and Node.js with TypeScript.
+
+## Structure
+
+- `server/` – Express API (TS) with Mongoose models, JWT auth, and admin/user roles
+- `src/` – Existing Vite React app (can be migrated under `client/` later). A new `client/` may be added to integrate with this API.
+
+## Server Setup
+
+Environment file: `server/.env`
+
+```
+PORT=4000
+MONGODB_URI=mongodb://127.0.0.1:27017/thematka
+JWT_SECRET=change_this_dev_secret_please
+TOKEN_EXPIRES=7d
+CLIENT_URL=http://localhost:5173
+# Optional admin seed
+ADMIN_EMAIL=admin@thematka.local
+ADMIN_PASSWORD=Admin@12345
+ADMIN_NAME=Admin
+```
+
+Install and run (from `server/`):
+
+```
+npm install
+npm run dev
+# seed admin (one-time)
+npm run seed
+```
+
+API base: `http://localhost:4000/api`
+
+### Endpoints
+- Auth: `POST /auth/signup`, `POST /auth/login`, `POST /auth/admin/login`, `POST /auth/logout`, `GET /auth/me`
+- Properties: `GET /properties`, `GET /properties/:slug`, `POST /properties` (admin), `PUT /properties/:id` (admin), `DELETE /properties/:id` (admin)
+- Pages: `GET /pages/:slug`, `PUT /pages/:slug` (admin upsert)
+- Enquiries: `POST /enquiries`, `GET /enquiries` (admin)
+- Users: `GET /users` (admin), `PATCH /users/:id/status` (admin)
+
+Security: HttpOnly cookies (token) and Bearer supported. CORS restricted by `CLIENT_URL`.
+
+## Client Integration
+
+- Set an env (e.g. `client/.env`) with `VITE_API_URL=http://localhost:4000/api`
+- Use Authorization: Bearer or rely on HttpOnly cookie with `credentials: 'include'`
+- Routes required: Home, All Listings, Property Detail, About, Contact, Auth (login/signup/admin), User Panel, Admin Panel
+
+## Development Notes
+
+- TypeScript enforced across server
+- ESLint/Prettier recommended
+- 404 and error handling included
+- Seed script creates an admin if missing
+
