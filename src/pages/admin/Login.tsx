@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { supabase } from "@/integrations/supabase/client";
+import { useAuthApi } from "@/hooks/useAuthApi";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -15,6 +15,7 @@ const loginSchema = z.object({
 
 const AdminLogin = () => {
   const navigate = useNavigate();
+  const { adminLogin, user } = useAuthApi();
   const [loading, setLoading] = useState(false);
   const [loginData, setLoginData] = useState({
     email: "",
@@ -22,12 +23,10 @@ const AdminLogin = () => {
   });
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session) {
-        navigate("/admin/dashboard");
-      }
-    });
-  }, [navigate]);
+    if (user) {
+      navigate("/admin/dashboard");
+    }
+  }, [user, navigate]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -35,36 +34,9 @@ const AdminLogin = () => {
 
     try {
       const validated = loginSchema.parse(loginData);
-
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email: validated.email,
-        password: validated.password,
-      });
-
-      if (error) throw error;
-
-      if (data.user) {
-        const { data: roleData, error: roleError } = await supabase
-          .from("user_roles")
-          .select("role")
-          .eq("user_id", data.user.id)
-          .eq("role", "admin")
-          .single();
-
-        if (roleError || !roleData) {
-          await supabase.auth.signOut();
-          toast.error("You don't have admin privileges. Please contact the administrator.");
-          setLoading(false);
-          return;
-        }
-
-        toast.success("Logged in successfully!");
-
-        // Wait a moment to ensure auth state is updated before redirecting
-        setTimeout(() => {
-          navigate("/admin/dashboard");
-        }, 500);
-      }
+      await adminLogin(validated.email, validated.password);
+      toast.success("Logged in successfully!");
+      navigate("/admin/dashboard");
     } catch (error: any) {
       let errorMessage = "Invalid email or password";
 
@@ -72,14 +44,10 @@ const AdminLogin = () => {
         errorMessage = error.errors[0]?.message || "Please fill in all fields correctly";
       } else if (error?.message) {
         errorMessage = error.message;
-      } else if (error?.error?.message) {
-        errorMessage = error.error.message;
-      } else if (typeof error === "string") {
-        errorMessage = error;
       }
 
-      console.error("Login error:", error);
       toast.error(errorMessage);
+    } finally {
       setLoading(false);
     }
   };

@@ -1,11 +1,10 @@
 import { useState, useEffect } from "react";
-import { Edit2, Trash2, Eye, Star, Upload, X } from "lucide-react";
+import { Edit2, Trash2, Eye } from "lucide-react";
 import AdminLayout from "@/components/admin/AdminLayout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Checkbox } from "@/components/ui/checkbox";
 import {
   Select,
   SelectContent,
@@ -23,7 +22,6 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Table,
   TableBody,
@@ -32,45 +30,53 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { supabase } from "@/integrations/supabase/client";
+import { api } from "@/services/api";
 import { toast } from "sonner";
 import type { Property } from "@/types";
 
 interface PropertyFormData {
   title: string;
+  slug: string;
   description: string;
   price: string;
   location: string;
+  city: string;
   area: string;
   bedrooms: string;
   bathrooms: string;
-  type: string;
+  propertyType: string;
   status: string;
   images: string[];
-  imageFiles: File[];
+  coverImage: string;
+  premium: boolean;
+  ownerContact: string;
+  features: string;
 }
 
 const Properties = () => {
   const [properties, setProperties] = useState<Property[]>([]);
-  const [selectedProperties, setSelectedProperties] = useState<string[]>([]);
-  const [filterStatus, setFilterStatus] = useState("all");
-  const [searchTerm, setSearchTerm] = useState("");
+  const [loading, setLoading] = useState(true);
   const [openForm, setOpenForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [uploading, setUploading] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const [filterStatus, setFilterStatus] = useState("all");
+  const [searchTerm, setSearchTerm] = useState("");
   const [formData, setFormData] = useState<PropertyFormData>({
     title: "",
+    slug: "",
     description: "",
     price: "",
     location: "",
+    city: "",
     area: "",
     bedrooms: "0",
     bathrooms: "0",
-    type: "Apartment",
-    status: "available",
+    propertyType: "Apartment",
+    status: "draft",
     images: [],
-    imageFiles: [],
+    coverImage: "",
+    premium: false,
+    ownerContact: "",
+    features: "",
   });
 
   useEffect(() => {
@@ -80,329 +86,171 @@ const Properties = () => {
   const fetchProperties = async () => {
     setLoading(true);
     try {
-      // Check if Supabase is configured
-      if (!import.meta.env.VITE_SUPABASE_URL || !import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY) {
-        throw new Error("Supabase environment variables not configured");
-      }
-
-      const { data, error } = await supabase
-        .from("properties")
-        .select("*")
-        .order("created_at", { ascending: false });
-
-      if (error) {
-        const errorMsg = error.message || JSON.stringify(error);
-        throw new Error(errorMsg);
-      }
-
-      const formattedProperties: Property[] = (data || []).map((item: any) => ({
-        id: item.id,
-        title: item.title,
-        description: item.description,
-        price: item.price,
-        location: item.location,
-        area: item.area,
-        bedrooms: item.bedrooms || 0,
-        bathrooms: item.bathrooms || 0,
-        type: item.type || "Apartment",
-        status: item.status,
-        images: item.images || [],
-        created_at: item.created_at,
-      }));
-
-      setProperties(formattedProperties);
+      const response = await api.getAdminProperties();
+      setProperties(response.data);
     } catch (error: any) {
-      const errorMsg = error?.message || error?.toString() || "Unknown error";
-      console.error("Error details:", errorMsg, error);
-      toast.error("Failed to fetch properties: " + errorMsg);
+      toast.error(error.message || "Failed to fetch properties");
     } finally {
       setLoading(false);
     }
   };
 
-  const handleAddProperty = () => {
-    setEditingId(null);
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    try {
+      const data = {
+        title: formData.title,
+        slug: formData.slug || formData.title.toLowerCase().replace(/\s+/g, '-'),
+        description: formData.description,
+        price: parseFloat(formData.price),
+        location: formData.location,
+        city: formData.city,
+        area: formData.area ? parseFloat(formData.area) : undefined,
+        bedrooms: formData.bedrooms ? parseInt(formData.bedrooms) : undefined,
+        bathrooms: formData.bathrooms ? parseInt(formData.bathrooms) : undefined,
+        propertyType: formData.propertyType,
+        status: formData.status,
+        images: formData.images,
+        coverImage: formData.coverImage,
+        premium: formData.premium,
+        ownerContact: formData.ownerContact,
+        features: formData.features ? formData.features.split(',').map(f => f.trim()) : []
+      };
+
+      if (editingId) {
+        await api.updateProperty(editingId, data);
+        toast.success("Property updated successfully");
+      } else {
+        await api.createProperty(data);
+        toast.success("Property created successfully");
+      }
+
+      setOpenForm(false);
+      setEditingId(null);
+      resetForm();
+      fetchProperties();
+    } catch (error: any) {
+      toast.error(error.message || "Failed to save property");
+    }
+  };
+
+  const handleEdit = (property: any) => {
     setFormData({
-      title: "",
-      description: "",
-      price: "",
-      location: "",
-      area: "",
-      bedrooms: "0",
-      bathrooms: "0",
-      type: "Apartment",
-      status: "available",
-      images: [],
-      imageFiles: [],
+      title: property.title,
+      slug: property.slug,
+      description: property.description,
+      price: property.price.toString(),
+      location: property.location,
+      city: property.city || "",
+      area: property.area?.toString() || "",
+      bedrooms: property.bedrooms?.toString() || "0",
+      bathrooms: property.bathrooms?.toString() || "0",
+      propertyType: property.propertyType,
+      status: property.status,
+      images: property.images || [],
+      coverImage: property.coverImage || "",
+      premium: property.premium || false,
+      ownerContact: property.ownerContact,
+      features: Array.isArray(property.features) ? property.features.join(', ') : "",
     });
+    setEditingId(property._id);
     setOpenForm(true);
   };
 
-  const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files || []);
-    setFormData({
-      ...formData,
-      imageFiles: [...formData.imageFiles, ...files],
-    });
-  };
-
-  const removeImageFile = (index: number) => {
-    setFormData({
-      ...formData,
-      imageFiles: formData.imageFiles.filter((_, i) => i !== index),
-    });
-  };
-
-  const removeImageUrl = (index: number) => {
-    setFormData({
-      ...formData,
-      images: formData.images.filter((_, i) => i !== index),
-    });
-  };
-
-  const uploadImages = async (): Promise<string[]> => {
-    const uploadedUrls: string[] = [...formData.images];
-
-    for (const file of formData.imageFiles) {
+  const handleDelete = async (id: string) => {
+    if (confirm("Are you sure you want to delete this property?")) {
       try {
-        const fileExt = file.name.split(".").pop();
-        const fileName = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}.${fileExt}`;
-        const filePath = `properties/${fileName}`;
-
-        const { error: uploadError } = await supabase.storage
-          .from("property-images")
-          .upload(filePath, file);
-
-        if (uploadError) {
-          const errorMsg = uploadError.message || JSON.stringify(uploadError);
-          throw new Error(errorMsg);
-        }
-
-        const { data } = supabase.storage
-          .from("property-images")
-          .getPublicUrl(filePath);
-
-        uploadedUrls.push(data.publicUrl);
+        await api.deleteProperty(id);
+        toast.success("Property deleted successfully");
+        fetchProperties();
       } catch (error: any) {
-        toast.error(`Failed to upload image: ${error.message}`);
-        throw error;
+        toast.error(error.message || "Failed to delete property");
       }
-    }
-
-    return uploadedUrls;
-  };
-
-  const handleSaveProperty = async () => {
-    if (!formData.title || !formData.price || !formData.location || !formData.area) {
-      toast.error("Please fill in all required fields");
-      return;
-    }
-
-    setUploading(true);
-    try {
-      let imageUrls: string[] = [];
-
-      if (formData.imageFiles.length > 0) {
-        imageUrls = await uploadImages();
-      } else if (formData.images.length === 0) {
-        toast.error("Please add at least one image");
-        setUploading(false);
-        return;
-      } else {
-        imageUrls = formData.images;
-      }
-
-      const propertyType: 'flat' | 'plot' | 'commercial' | 'rental' = 
-        (formData.type === 'Apartment' || formData.type === 'House') ? 'flat' : 
-        formData.type === 'Plot' ? 'plot' : 
-        formData.type === 'Commercial' ? 'commercial' : 
-        'rental';
-      
-      const propertyData = {
-        title: formData.title,
-        description: formData.description,
-        price: parseInt(formData.price),
-        location: formData.location,
-        area: parseInt(formData.area),
-        property_type: propertyType,
-        status: formData.status as 'available' | 'pending' | 'sold',
-        images: imageUrls,
-      };
-
-      let error;
-      if (editingId) {
-        const { error: updateError } = await supabase
-          .from("properties")
-          .update(propertyData)
-          .eq("id", editingId);
-        error = updateError;
-      } else {
-        const { error: insertError } = await supabase
-          .from("properties")
-          .insert([propertyData]);
-        error = insertError;
-      }
-
-      if (error) {
-        const errorMsg = error.message || JSON.stringify(error);
-        throw new Error(errorMsg);
-      }
-
-      toast.success(editingId ? "Property updated!" : "Property added!");
-      setOpenForm(false);
-      fetchProperties();
-    } catch (error: any) {
-      const errorMsg = error?.message || error?.toString() || "Unknown error";
-      console.error("Error details:", errorMsg, error);
-      toast.error(errorMsg || "Failed to save property");
-    } finally {
-      setUploading(false);
     }
   };
 
-  const handleDeleteProperty = async (id: string) => {
-    if (!window.confirm("Are you sure you want to delete this property?")) return;
-
-    try {
-      const { error } = await supabase
-        .from("properties")
-        .delete()
-        .eq("id", id);
-
-      if (error) {
-        const errorMsg = error.message || JSON.stringify(error);
-        throw new Error(errorMsg);
-      }
-
-      toast.success("Property deleted!");
-      fetchProperties();
-    } catch (error: any) {
-      const errorMsg = error?.message || error?.toString() || "Unknown error";
-      console.error("Error details:", errorMsg, error);
-      toast.error(errorMsg || "Failed to delete property");
-    }
+  const resetForm = () => {
+    setFormData({
+      title: "",
+      slug: "",
+      description: "",
+      price: "",
+      location: "",
+      city: "",
+      area: "",
+      bedrooms: "0",
+      bathrooms: "0",
+      propertyType: "Apartment",
+      status: "draft",
+      images: [],
+      coverImage: "",
+      premium: false,
+      ownerContact: "",
+      features: "",
+    });
+    setEditingId(null);
   };
 
-  const filteredProperties = properties.filter((p) => {
-    const matchStatus = filterStatus === "all" || p.status === filterStatus;
-    const matchSearch =
-      p.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      p.location.toLowerCase().includes(searchTerm.toLowerCase());
-    return matchStatus && matchSearch;
+  const filteredProperties = properties.filter((property) => {
+    const matchesStatus = filterStatus === "all" || property.status === filterStatus;
+    const matchesSearch = property.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      property.location.toLowerCase().includes(searchTerm.toLowerCase());
+    return matchesStatus && matchesSearch;
   });
-
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case "active":
-        return "bg-green-100 text-green-800";
-      case "pending":
-        return "bg-yellow-100 text-yellow-800";
-      case "sold":
-        return "bg-gray-100 text-gray-800";
-      default:
-        return "bg-gray-100 text-gray-800";
-    }
-  };
-
-  const formatPrice = (price: number | undefined) => {
-    if (!price) return "₹0";
-    if (price >= 10000000) return `₹${(price / 10000000).toFixed(1)}Cr`;
-    if (price >= 100000) return `₹${(price / 100000).toFixed(1)}L`;
-    return `₹${price}`;
-  };
 
   return (
     <AdminLayout>
       <div className="space-y-6">
-        {/* Header */}
-        <div className="flex justify-between items-start">
+        <div className="flex justify-between items-center">
           <div>
             <h1 className="text-3xl font-bold">Properties</h1>
-            <p className="text-muted-foreground mt-1">Manage all property listings</p>
+            <p className="text-gray-500">Manage your property listings</p>
           </div>
           <Dialog open={openForm} onOpenChange={setOpenForm}>
             <DialogTrigger asChild>
-              <Button onClick={handleAddProperty}>+ Add Property</Button>
+              <Button onClick={() => resetForm()}>Add New Property</Button>
             </DialogTrigger>
             <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
               <DialogHeader>
-                <DialogTitle>
-                  {editingId ? "Edit Property" : "Add New Property"}
-                </DialogTitle>
+                <DialogTitle>{editingId ? "Edit Property" : "Add New Property"}</DialogTitle>
                 <DialogDescription>
-                  Fill in all required details to list a property
+                  Fill in the property details below
                 </DialogDescription>
               </DialogHeader>
-
-              <div className="space-y-4">
-                {/* Basic Info */}
-                <div>
-                  <Label>Property Title *</Label>
-                  <Input
-                    placeholder="e.g., 3 BHK Luxury Flat"
-                    value={formData.title}
-                    onChange={(e) =>
-                      setFormData({ ...formData, title: e.target.value })
-                    }
-                  />
-                </div>
-
-                <div>
-                  <Label>Description</Label>
-                  <Textarea
-                    placeholder="Describe the property..."
-                    value={formData.description}
-                    onChange={(e) =>
-                      setFormData({ ...formData, description: e.target.value })
-                    }
-                    className="h-20"
-                  />
-                </div>
-
-                <div className="grid md:grid-cols-2 gap-4">
+              <form onSubmit={handleSubmit} className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <Label>Price (₹) *</Label>
+                    <Label>Title *</Label>
+                    <Input
+                      value={formData.title}
+                      onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+                      required
+                    />
+                  </div>
+                  <div>
+                    <Label>Slug</Label>
+                    <Input
+                      value={formData.slug}
+                      onChange={(e) => setFormData({ ...formData, slug: e.target.value })}
+                      placeholder="auto-generated from title"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label>Price *</Label>
                     <Input
                       type="number"
-                      placeholder="e.g., 6500000"
                       value={formData.price}
-                      onChange={(e) =>
-                        setFormData({ ...formData, price: e.target.value })
-                      }
+                      onChange={(e) => setFormData({ ...formData, price: e.target.value })}
+                      required
                     />
                   </div>
                   <div>
-                    <Label>Location *</Label>
-                    <Input
-                      placeholder="e.g., Sector 3, Rohtak"
-                      value={formData.location}
-                      onChange={(e) =>
-                        setFormData({ ...formData, location: e.target.value })
-                      }
-                    />
-                  </div>
-                </div>
-
-                <div className="grid md:grid-cols-2 gap-4">
-                  <div>
-                    <Label>Area (sq ft) *</Label>
-                    <Input
-                      type="number"
-                      placeholder="e.g., 1650"
-                      value={formData.area}
-                      onChange={(e) =>
-                        setFormData({ ...formData, area: e.target.value })
-                      }
-                    />
-                  </div>
-                  <div>
-                    <Label>Property Type</Label>
-                    <Select
-                      value={formData.type}
-                      onValueChange={(v) =>
-                        setFormData({ ...formData, type: v })
-                      }
-                    >
+                    <Label>Property Type *</Label>
+                    <Select value={formData.propertyType} onValueChange={(value) => setFormData({ ...formData, propertyType: value })}>
                       <SelectTrigger>
                         <SelectValue />
                       </SelectTrigger>
@@ -417,315 +265,206 @@ const Properties = () => {
                   </div>
                 </div>
 
-                <div className="grid md:grid-cols-2 gap-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label>Location *</Label>
+                    <Input
+                      value={formData.location}
+                      onChange={(e) => setFormData({ ...formData, location: e.target.value })}
+                      required
+                    />
+                  </div>
+                  <div>
+                    <Label>City</Label>
+                    <Input
+                      value={formData.city}
+                      onChange={(e) => setFormData({ ...formData, city: e.target.value })}
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-3 gap-4">
+                  <div>
+                    <Label>Area (sq ft)</Label>
+                    <Input
+                      type="number"
+                      value={formData.area}
+                      onChange={(e) => setFormData({ ...formData, area: e.target.value })}
+                    />
+                  </div>
                   <div>
                     <Label>Bedrooms</Label>
                     <Input
                       type="number"
-                      placeholder="0"
                       value={formData.bedrooms}
-                      onChange={(e) =>
-                        setFormData({ ...formData, bedrooms: e.target.value })
-                      }
+                      onChange={(e) => setFormData({ ...formData, bedrooms: e.target.value })}
                     />
                   </div>
                   <div>
                     <Label>Bathrooms</Label>
                     <Input
                       type="number"
-                      placeholder="0"
                       value={formData.bathrooms}
-                      onChange={(e) =>
-                        setFormData({
-                          ...formData,
-                          bathrooms: e.target.value,
-                        })
-                      }
+                      onChange={(e) => setFormData({ ...formData, bathrooms: e.target.value })}
                     />
                   </div>
                 </div>
 
-                <div className="grid md:grid-cols-2 gap-4">
+                <div>
+                  <Label>Description *</Label>
+                  <Textarea
+                    value={formData.description}
+                    onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                    required
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
                   <div>
                     <Label>Status</Label>
-                    <Select
-                      value={formData.status}
-                      onValueChange={(v) =>
-                        setFormData({ ...formData, status: v })
-                      }
-                    >
+                    <Select value={formData.status} onValueChange={(value) => setFormData({ ...formData, status: value })}>
                       <SelectTrigger>
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="available">Available</SelectItem>
-                        <SelectItem value="pending">Pending</SelectItem>
+                        <SelectItem value="draft">Draft</SelectItem>
+                        <SelectItem value="active">Active</SelectItem>
                         <SelectItem value="sold">Sold</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
-                </div>
-
-                {/* Image Upload */}
-                <div>
-                  <Label>Images *</Label>
-                  <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center cursor-pointer hover:border-primary transition">
-                    <input
-                      type="file"
-                      multiple
-                      accept="image/*"
-                      onChange={handleImageSelect}
-                      className="hidden"
-                      id="image-upload"
+                  <div>
+                    <Label>Owner Contact *</Label>
+                    <Input
+                      value={formData.ownerContact}
+                      onChange={(e) => setFormData({ ...formData, ownerContact: e.target.value })}
+                      required
                     />
-                    <label
-                      htmlFor="image-upload"
-                      className="cursor-pointer flex flex-col items-center gap-2"
-                    >
-                      <Upload className="h-8 w-8 text-muted-foreground" />
-                      <span className="text-sm font-medium">
-                        Click to upload images
-                      </span>
-                      <span className="text-xs text-muted-foreground">
-                        PNG, JPG, GIF up to 10MB
-                      </span>
-                    </label>
                   </div>
-
-                  {/* Selected Images Preview */}
-                  {formData.imageFiles.length > 0 && (
-                    <div className="mt-4">
-                      <h4 className="text-sm font-medium mb-2">
-                        New Images ({formData.imageFiles.length})
-                      </h4>
-                      <div className="grid grid-cols-2 gap-2">
-                        {formData.imageFiles.map((file, index) => (
-                          <div
-                            key={index}
-                            className="relative bg-gray-100 rounded aspect-square flex items-center justify-center"
-                          >
-                            <img
-                              src={URL.createObjectURL(file)}
-                              alt="preview"
-                              className="w-full h-full object-cover rounded"
-                            />
-                            <button
-                              type="button"
-                              onClick={() => removeImageFile(index)}
-                              className="absolute top-1 right-1 bg-red-500 text-white rounded-full p-1"
-                            >
-                              <X className="h-4 w-4" />
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Existing Images */}
-                  {formData.images.length > 0 && (
-                    <div className="mt-4">
-                      <h4 className="text-sm font-medium mb-2">
-                        Existing Images ({formData.images.length})
-                      </h4>
-                      <div className="grid grid-cols-2 gap-2">
-                        {formData.images.map((url, index) => (
-                          <div
-                            key={index}
-                            className="relative bg-gray-100 rounded aspect-square"
-                          >
-                            <img
-                              src={url}
-                              alt="existing"
-                              className="w-full h-full object-cover rounded"
-                            />
-                            <button
-                              type="button"
-                              onClick={() => removeImageUrl(index)}
-                              className="absolute top-1 right-1 bg-red-500 text-white rounded-full p-1"
-                            >
-                              <X className="h-4 w-4" />
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
                 </div>
-              </div>
 
-              <div className="flex gap-3 justify-end pt-4">
-                <Button
-                  variant="outline"
-                  onClick={() => setOpenForm(false)}
-                  disabled={uploading}
-                >
-                  Cancel
-                </Button>
-                <Button onClick={handleSaveProperty} disabled={uploading}>
-                  {uploading ? "Uploading..." : "Save Property"}
-                </Button>
-              </div>
+                <div>
+                  <Label>Features (comma separated)</Label>
+                  <Input
+                    value={formData.features}
+                    onChange={(e) => setFormData({ ...formData, features: e.target.value })}
+                    placeholder="e.g., Swimming Pool, Gym, Security"
+                  />
+                </div>
+
+                <div className="flex gap-2">
+                  <Button type="submit" className="flex-1">
+                    {editingId ? "Update Property" : "Create Property"}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => {
+                      setOpenForm(false);
+                      resetForm();
+                    }}
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              </form>
             </DialogContent>
           </Dialog>
         </div>
 
-        {/* Filters */}
         <Card>
           <CardHeader>
-            <CardTitle className="text-lg">Filters</CardTitle>
+            <CardTitle>Filter & Search</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="grid md:grid-cols-2 gap-4">
-              <div>
-                <Label className="text-sm mb-2 block">Search</Label>
-                <Input
-                  placeholder="Search title, location..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                />
-              </div>
-              <div>
-                <Label className="text-sm mb-2 block">Status</Label>
-                <Select value={filterStatus} onValueChange={setFilterStatus}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Status</SelectItem>
-                    <SelectItem value="available">Available</SelectItem>
-                    <SelectItem value="pending">Pending</SelectItem>
-                    <SelectItem value="sold">Sold</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <Input
+                placeholder="Search properties..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+              />
+              <Select value={filterStatus} onValueChange={setFilterStatus}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Status</SelectItem>
+                  <SelectItem value="draft">Draft</SelectItem>
+                  <SelectItem value="active">Active</SelectItem>
+                  <SelectItem value="sold">Sold</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
           </CardContent>
         </Card>
 
-        {/* Table */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Properties ({filteredProperties.length})</CardTitle>
-            <CardDescription>
-              Total: {properties.length} | Selected: {selectedProperties.length}
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            {loading ? (
-              <div className="text-center py-8 text-muted-foreground">
-                Loading properties...
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="w-12">
-                        <Checkbox
-                          checked={
-                            selectedProperties.length ===
-                              filteredProperties.length &&
-                            filteredProperties.length > 0
-                          }
-                          onChange={(checked) => {
-                            if (checked) {
-                              setSelectedProperties(
-                                filteredProperties.map((p) => p.id || "")
-                              );
-                            } else {
-                              setSelectedProperties([]);
-                            }
-                          }}
-                        />
-                      </TableHead>
-                      <TableHead>Title</TableHead>
-                      <TableHead>Location</TableHead>
-                      <TableHead>Price</TableHead>
-                      <TableHead>Area</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Images</TableHead>
-                      <TableHead>Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {filteredProperties.length === 0 ? (
+        {loading ? (
+          <Card>
+            <CardContent className="pt-6">
+              <p className="text-center">Loading properties...</p>
+            </CardContent>
+          </Card>
+        ) : (
+          <Card>
+            <CardHeader>
+              <CardTitle>Properties List</CardTitle>
+              <CardDescription>
+                Total: {filteredProperties.length} properties
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {filteredProperties.length === 0 ? (
+                <p className="text-center text-gray-500">No properties found</p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
                       <TableRow>
-                        <TableCell
-                          colSpan={8}
-                          className="text-center py-8 text-muted-foreground"
-                        >
-                          No properties found
-                        </TableCell>
+                        <TableHead>Title</TableHead>
+                        <TableHead>Location</TableHead>
+                        <TableHead>Price</TableHead>
+                        <TableHead>Type</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead>Actions</TableHead>
                       </TableRow>
-                    ) : (
-                      filteredProperties.map((property) => (
-                        <TableRow key={property.id}>
+                    </TableHeader>
+                    <TableBody>
+                      {filteredProperties.map((property: any) => (
+                        <TableRow key={property._id}>
+                          <TableCell className="font-medium">{property.title}</TableCell>
+                          <TableCell>{property.location}</TableCell>
+                          <TableCell>₹{property.price.toLocaleString()}</TableCell>
+                          <TableCell>{property.propertyType}</TableCell>
                           <TableCell>
-                            <Checkbox
-                              checked={selectedProperties.includes(
-                                property.id || ""
-                              )}
-                              onChange={(checked) => {
-                                if (checked) {
-                                  setSelectedProperties([
-                                    ...selectedProperties,
-                                    property.id || "",
-                                  ]);
-                                } else {
-                                  setSelectedProperties(
-                                    selectedProperties.filter(
-                                      (id) => id !== property.id
-                                    )
-                                  );
-                                }
-                              }}
-                            />
-                          </TableCell>
-                          <TableCell className="font-medium max-w-xs truncate">
-                            {property.title}
-                          </TableCell>
-                          <TableCell className="text-sm">
-                            {property.location}
-                          </TableCell>
-                          <TableCell className="font-medium">
-                            {formatPrice(property.price)}
-                          </TableCell>
-                          <TableCell className="text-sm">
-                            {property.area} sq ft
-                          </TableCell>
-                          <TableCell>
-                            <Badge className={getStatusColor(property.status || "")}>
+                            <Badge variant={property.status === "active" ? "default" : "secondary"}>
                               {property.status}
                             </Badge>
                           </TableCell>
-                          <TableCell className="text-sm">
-                            {(property.images || []).length} image
-                            {(property.images || []).length !== 1 ? "s" : ""}
-                          </TableCell>
-                          <TableCell>
-                            <div className="flex gap-2">
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                title="Delete"
-                                onClick={() =>
-                                  handleDeleteProperty(property.id || "")
-                                }
-                              >
-                                <Trash2 className="h-4 w-4 text-red-500" />
-                              </Button>
-                            </div>
+                          <TableCell className="space-x-2">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => handleEdit(property)}
+                            >
+                              <Edit2 className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="destructive"
+                              onClick={() => handleDelete(property._id)}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
                           </TableCell>
                         </TableRow>
-                      ))
-                    )}
-                  </TableBody>
-                </Table>
-              </div>
-            )}
-          </CardContent>
-        </Card>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        )}
       </div>
     </AdminLayout>
   );

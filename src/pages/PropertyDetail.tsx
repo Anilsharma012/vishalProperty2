@@ -1,12 +1,13 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { supabase } from '@/integrations/supabase/client';
+import { api } from '@/services/api';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { MessageCircle, Phone, Share2, ChevronLeft, ChevronRight } from 'lucide-react';
+import { toast } from 'sonner';
 
 interface PropertyData {
-  id: string;
+  _id: string;
   title: string;
   slug?: string;
   description?: string;
@@ -16,51 +17,40 @@ interface PropertyData {
   area?: number;
   bedrooms?: number;
   bathrooms?: number;
-  property_type?: string;
+  propertyType?: string;
   status?: string;
   images?: string[];
-  created_at?: string;
-  updated_at?: string;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export default function PropertyDetail() {
-  const { id, slug } = useParams<{ id?: string; slug?: string }>();
+  const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [property, setProperty] = useState<PropertyData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
 
-  const propertyIdentifier = id || slug;
-
   useEffect(() => {
     const loadProperty = async () => {
-      if (!propertyIdentifier) return;
+      if (!id) return;
       
       try {
         setIsLoading(true);
-        // Try with slug first
-        const { data, error } = await supabase
-          .from('properties')
-          .select('*')
-          .or(`slug.eq.${propertyIdentifier},id.eq.${propertyIdentifier}`)
-          .maybeSingle();
-
-        if (error) throw error;
-        if (!data) throw new Error('Property not found');
-        
-        setProperty(data);
-      } catch (error) {
-        console.error('Failed to load property:', error);
-        navigate('/properties/all');
+        const response = await api.getProperty(id);
+        setProperty(response.data);
+      } catch (error: any) {
+        toast.error('Property not found');
+        navigate('/');
       } finally {
         setIsLoading(false);
       }
     };
 
-    if (propertyIdentifier) {
+    if (id) {
       loadProperty();
     }
-  }, [propertyIdentifier, navigate]);
+  }, [id, navigate]);
 
   if (isLoading) {
     return (
@@ -75,7 +65,7 @@ export default function PropertyDetail() {
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
           <p className="text-gray-600 mb-4">Property not found</p>
-          <Button onClick={() => navigate('/properties')}>Back to Properties</Button>
+          <Button onClick={() => navigate('/')}>Back to Home</Button>
         </div>
       </div>
     );
@@ -102,7 +92,7 @@ export default function PropertyDetail() {
       });
     } else {
       navigator.clipboard.writeText(window.location.href);
-      alert('Link copied to clipboard');
+      toast.success('Link copied to clipboard');
     }
   };
 
@@ -113,11 +103,11 @@ export default function PropertyDetail() {
         <div className="max-w-6xl mx-auto px-4 py-4">
           <Button
             variant="ghost"
-            onClick={() => navigate('/properties')}
+            onClick={() => navigate(-1)}
             className="gap-2 mb-4"
           >
             <ChevronLeft size={20} />
-            Back to Properties
+            Back
           </Button>
         </div>
       </div>
@@ -184,9 +174,7 @@ export default function PropertyDetail() {
 
                 <div className="border-t pt-4">
                   <p className="text-3xl font-bold text-green-600">
-                    {property.property_type === 'rental'
-                      ? `₹${(property.price || 0).toLocaleString()}/month`
-                      : `₹${(property.price || 0).toLocaleString()}`}
+                    ₹{(property.price || 0).toLocaleString()}
                   </p>
                 </div>
 
@@ -231,15 +219,15 @@ export default function PropertyDetail() {
               <CardContent className="p-4 space-y-3">
                 <div>
                   <p className="text-sm text-gray-600">Property Type</p>
-                  <p className="font-bold capitalize">{property.property_type || 'N/A'}</p>
+                  <p className="font-bold capitalize">{property.propertyType || 'N/A'}</p>
                 </div>
                 {property.status && (
                   <div>
                     <p className="text-sm text-gray-600">Status</p>
                     <span className={`inline-block px-3 py-1 rounded-full text-xs font-medium text-white ${
-                      property.status === 'available'
+                      property.status === 'active'
                         ? 'bg-green-600'
-                        : property.status === 'pending'
+                        : property.status === 'draft'
                         ? 'bg-yellow-600'
                         : 'bg-gray-600'
                     }`}>
@@ -255,7 +243,7 @@ export default function PropertyDetail() {
               <CardContent className="p-4 space-y-3">
                 <Button
                   className="w-full gap-2"
-                  onClick={() => window.open(`tel:9592077999`, '_self')}
+                  onClick={() => window.open(`tel:9876543210`, '_self')}
                 >
                   <Phone size={18} />
                   Call Agent
@@ -263,7 +251,7 @@ export default function PropertyDetail() {
                 <Button
                   variant="outline"
                   className="w-full gap-2 bg-green-600 hover:bg-green-700 text-white"
-                  onClick={() => window.open(`https://wa.me/919592077999?text=Interested%20in%20${property.title}`, '_blank')}
+                  onClick={() => window.open(`https://wa.me/919876543210?text=Interested%20in%20${property.title}`, '_blank')}
                 >
                   <MessageCircle size={18} />
                   WhatsApp

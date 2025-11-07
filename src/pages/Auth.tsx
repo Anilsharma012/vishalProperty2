@@ -1,19 +1,23 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { supabase } from "@/integrations/supabase/client";
+import { useAuthApi } from "@/hooks/useAuthApi";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { toast } from "sonner";
-import { z } from "zod";
+import { z, ZodError } from "zod";
 
 const signupSchema = z.object({
   fullName: z.string().min(2, "Name must be at least 2 characters"),
   email: z.string().email("Invalid email address"),
   phone: z.string().min(10, "Phone number must be at least 10 digits"),
   password: z.string().min(6, "Password must be at least 6 characters"),
+  confirmPassword: z.string().min(6)
+}).refine((data) => data.password === data.confirmPassword, {
+  message: "Passwords don't match",
+  path: ["confirmPassword"]
 });
 
 const loginSchema = z.object({
@@ -23,12 +27,14 @@ const loginSchema = z.object({
 
 const Auth = () => {
   const navigate = useNavigate();
+  const { signup, login, user } = useAuthApi();
   const [loading, setLoading] = useState(false);
   const [signupData, setSignupData] = useState({
     fullName: "",
     email: "",
     phone: "",
     password: "",
+    confirmPassword: "",
   });
   const [loginData, setLoginData] = useState({
     email: "",
@@ -36,20 +42,10 @@ const Auth = () => {
   });
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session) {
-        navigate("/dashboard");
-      }
-    });
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      if (session) {
-        navigate("/dashboard");
-      }
-    });
-
-    return () => subscription.unsubscribe();
-  }, [navigate]);
+    if (user) {
+      navigate("/dashboard");
+    }
+  }, [user, navigate]);
 
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -57,29 +53,17 @@ const Auth = () => {
 
     try {
       const validated = signupSchema.parse(signupData);
-      
-      const { error } = await supabase.auth.signUp({
-        email: validated.email,
-        password: validated.password,
-        options: {
-          emailRedirectTo: `${window.location.origin}/dashboard`,
-          data: {
-            full_name: validated.fullName,
-            phone: validated.phone,
-          },
-        },
-      });
-
-      if (error) throw error;
-
-      toast.success("Account created successfully! You can now login.");
-      setSignupData({ fullName: "", email: "", phone: "", password: "" });
+      await signup(validated.fullName, validated.email, validated.phone, validated.password, validated.confirmPassword);
+      toast.success("Account created successfully!");
+      navigate("/dashboard");
     } catch (error: any) {
-      if (error.errors) {
-        toast.error(error.errors[0].message);
-      } else {
-        toast.error(error.message || "An error occurred during signup");
+      let errorMessage = error?.message || "An error occurred during signup";
+      
+      if (error instanceof ZodError) {
+        errorMessage = error.errors[0]?.message || errorMessage;
       }
+
+      toast.error(errorMessage);
     } finally {
       setLoading(false);
     }
@@ -91,21 +75,17 @@ const Auth = () => {
 
     try {
       const validated = loginSchema.parse(loginData);
-      
-      const { error } = await supabase.auth.signInWithPassword({
-        email: validated.email,
-        password: validated.password,
-      });
-
-      if (error) throw error;
-      
+      await login(validated.email, validated.password);
       toast.success("Logged in successfully!");
+      navigate("/dashboard");
     } catch (error: any) {
-      if (error.errors) {
-        toast.error(error.errors[0].message);
-      } else {
-        toast.error(error.message || "Invalid email or password");
+      let errorMessage = error?.message || "Invalid email or password";
+      
+      if (error instanceof ZodError) {
+        errorMessage = error.errors[0]?.message || errorMessage;
       }
+
+      toast.error(errorMessage);
     } finally {
       setLoading(false);
     }
@@ -202,6 +182,17 @@ const Auth = () => {
                     placeholder="••••••••"
                     value={signupData.password}
                     onChange={(e) => setSignupData({ ...signupData, password: e.target.value })}
+                    required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="signup-confirm">Confirm Password</Label>
+                  <Input
+                    id="signup-confirm"
+                    type="password"
+                    placeholder="••••••••"
+                    value={signupData.confirmPassword}
+                    onChange={(e) => setSignupData({ ...signupData, confirmPassword: e.target.value })}
                     required
                   />
                 </div>

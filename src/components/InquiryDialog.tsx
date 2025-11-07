@@ -1,114 +1,155 @@
 import { useState } from "react";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
-import { supabase } from "@/integrations/supabase/client";
+import { api } from "@/services/api";
 import { z } from "zod";
 
-interface InquiryDialogProps {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-}
-
 const enquirySchema = z.object({
-  name: z.string().trim().min(2, "Name must be at least 2 characters").max(100),
-  phone: z.string().trim().min(10, "Phone number must be at least 10 digits").max(15),
-  email: z.string().trim().email("Invalid email address").max(255).optional().or(z.literal("")),
-  message: z.string().trim().min(10, "Message must be at least 10 characters").max(1000),
+  name: z.string().min(2, "Name must be at least 2 characters"),
+  email: z.string().email("Invalid email address").optional().or(z.literal("")),
+  phone: z.string().min(10, "Phone number must be at least 10 digits"),
+  message: z.string().min(5, "Message must be at least 5 characters"),
+  propertyId: z.string().optional(),
 });
 
-const InquiryDialog = ({ open, onOpenChange }: InquiryDialogProps) => {
+interface InquiryDialogProps {
+  propertyId?: string;
+  propertyTitle?: string;
+}
+
+export default function InquiryDialog({ propertyId, propertyTitle }: InquiryDialogProps) {
+  const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({
     name: "",
-    phone: "",
     email: "",
-    message: ""
+    phone: "",
+    message: `Interested in: ${propertyTitle || "your property"}`,
   });
-  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setIsSubmitting(true);
-    
-    try {
-      const validated = enquirySchema.parse(formData);
-      
-      const { error } = await supabase
-        .from("enquiries")
-        .insert({
-          name: validated.name,
-          phone: validated.phone,
-          email: validated.email || null,
-          message: validated.message,
-        });
+    setLoading(true);
 
-      if (error) throw error;
-      
-      const whatsappMessage = encodeURIComponent(
-        `New Enquiry:\nName: ${validated.name}\nPhone: ${validated.phone}\nEmail: ${validated.email}\nMessage: ${validated.message}`
-      );
-      window.open(`https://wa.me/919592077899?text=${whatsappMessage}`, "_blank");
-      
-      toast.success("Thank you! We'll contact you soon.");
-      setFormData({ name: "", phone: "", email: "", message: "" });
-      onOpenChange(false);
+    try {
+      const validated = enquirySchema.parse({
+        ...formData,
+        propertyId,
+      });
+
+      await api.createEnquiry({
+        name: validated.name,
+        email: validated.email || undefined,
+        phone: validated.phone,
+        message: validated.message,
+        propertyId: validated.propertyId,
+      });
+
+      toast.success("Enquiry submitted successfully!");
+      setFormData({
+        name: "",
+        email: "",
+        phone: "",
+        message: `Interested in: ${propertyTitle || "your property"}`,
+      });
+      setOpen(false);
     } catch (error: any) {
+      let errorMessage = "Failed to submit enquiry";
       if (error.errors) {
-        toast.error(error.errors[0].message);
-      } else {
-        toast.error("Failed to send enquiry. Please try again.");
+        errorMessage = error.errors[0]?.message || errorMessage;
+      } else if (error.message) {
+        errorMessage = error.message;
       }
+      toast.error(errorMessage);
     } finally {
-      setIsSubmitting(false);
+      setLoading(false);
     }
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button>Inquire Now</Button>
+      </DialogTrigger>
+      <DialogContent>
         <DialogHeader>
-          <DialogTitle>Quick Inquiry</DialogTitle>
+          <DialogTitle>Inquire About Property</DialogTitle>
           <DialogDescription>
             Fill in your details and we'll get back to you soon
           </DialogDescription>
         </DialogHeader>
-        
         <form onSubmit={handleSubmit} className="space-y-4">
-          <Input
-            placeholder="Your Name"
-            value={formData.name}
-            onChange={(e) => setFormData({...formData, name: e.target.value})}
-            required
-          />
-          <Input
-            type="tel"
-            placeholder="Phone Number"
-            value={formData.phone}
-            onChange={(e) => setFormData({...formData, phone: e.target.value})}
-            required
-          />
-          <Input
-            type="email"
-            placeholder="Email Address (optional)"
-            value={formData.email}
-            onChange={(e) => setFormData({...formData, email: e.target.value})}
-          />
-          <Textarea
-            placeholder="Your Message"
-            value={formData.message}
-            onChange={(e) => setFormData({...formData, message: e.target.value})}
-            rows={4}
-            required
-          />
-          <Button type="submit" className="w-full" disabled={isSubmitting}>
-            {isSubmitting ? "Sending..." : "Send Inquiry"}
-          </Button>
+          <div className="space-y-2">
+            <Label htmlFor="inquiry-name">Full Name *</Label>
+            <Input
+              id="inquiry-name"
+              placeholder="John Doe"
+              value={formData.name}
+              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+              required
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="inquiry-email">Email</Label>
+            <Input
+              id="inquiry-email"
+              type="email"
+              placeholder="john@example.com"
+              value={formData.email}
+              onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="inquiry-phone">Phone Number *</Label>
+            <Input
+              id="inquiry-phone"
+              type="tel"
+              placeholder="9876543210"
+              value={formData.phone}
+              onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+              required
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="inquiry-message">Message *</Label>
+            <Textarea
+              id="inquiry-message"
+              placeholder="Your message..."
+              rows={4}
+              value={formData.message}
+              onChange={(e) => setFormData({ ...formData, message: e.target.value })}
+              required
+            />
+          </div>
+
+          <div className="flex gap-2">
+            <Button type="submit" disabled={loading} className="flex-1">
+              {loading ? "Submitting..." : "Submit Inquiry"}
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setOpen(false)}
+            >
+              Cancel
+            </Button>
+          </div>
         </form>
       </DialogContent>
     </Dialog>
   );
-};
-
-export default InquiryDialog;
+}

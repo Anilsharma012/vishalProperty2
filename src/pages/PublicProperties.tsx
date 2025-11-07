@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { supabase } from '@/supabase/client';
+import { api } from '@/services/api';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
 import { MessageCircle, Phone, Share2 } from 'lucide-react';
+import { toast } from 'sonner';
 import type { Property } from '@/types';
 
 const ITEMS_PER_PAGE = 12;
@@ -35,16 +36,11 @@ export default function PublicProperties() {
   const loadProperties = async () => {
     try {
       setIsLoading(true);
-      const { data, error } = await supabase
-        .from('properties')
-        .select('*')
-        .eq('status', 'active')
-        .order('created_at', { ascending: false });
-
-      if (error) throw error;
-      setProperties(data || []);
-    } catch (error) {
-      console.error('Failed to load properties:', error);
+      const response = await api.getProperties('active');
+      setProperties(response.data);
+    } catch (error: any) {
+      toast.error('Failed to load properties');
+      console.error(error);
     } finally {
       setIsLoading(false);
     }
@@ -95,7 +91,7 @@ export default function PublicProperties() {
       });
     } else {
       navigator.clipboard.writeText(window.location.href);
-      alert('Link copied to clipboard');
+      toast.success('Link copied to clipboard');
     }
   };
 
@@ -105,7 +101,7 @@ export default function PublicProperties() {
       <div className="bg-white border-b">
         <div className="max-w-7xl mx-auto px-4 py-6">
           <h1 className="text-3xl font-bold">Properties</h1>
-          <p className="text-gray-600 mt-2">Browse available properties in Rohtak</p>
+          <p className="text-gray-600 mt-2">Browse available properties</p>
         </div>
       </div>
 
@@ -193,7 +189,7 @@ export default function PublicProperties() {
 
                   <CardContent className="p-4 space-y-3">
                     {/* Title */}
-                    <Link to={`/property/${property.slug}`} className="block">
+                    <Link to={`/property/${property.id}`} className="block">
                       <h3 className="font-bold text-lg hover:text-blue-600 line-clamp-2">
                         {property.title}
                       </h3>

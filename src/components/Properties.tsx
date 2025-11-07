@@ -5,8 +5,8 @@ import { Button } from "@/components/ui/button";
 import { MapPin, Home, Maximize, IndianRupee, ExternalLink } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import InquiryDialog from "./InquiryDialog";
-import { supabase } from "@/integrations/supabase/client";
-import { demoProperties } from "@/data/demoProperties";
+import { api } from "@/services/api";
+import { toast } from "sonner";
 
 import buildingImg from "@/assets/building-exterior.jpg";
 import interiorImg from "@/assets/flat-interior.jpg";
@@ -14,13 +14,14 @@ import rohtakGateImg from "@/assets/rohtak-gate.jpg";
 import suncityBuildingImg from "@/assets/suncity-building.jpg";
 
 interface Property {
+  _id?: string;
   id?: string;
   title: string;
   price: number;
   location: string;
-  area: number;
+  area?: number;
   area_unit?: string;
-  property_type?: string;
+  propertyType?: string;
   type?: string;
   status: string;
   images: string[];
@@ -32,7 +33,6 @@ const Properties = () => {
   const [properties, setProperties] = useState<Property[]>([]);
   const [displayProperties, setDisplayProperties] = useState<Property[]>([]);
   const [selectedCategory, setSelectedCategory] = useState("all");
-  const [inquiryOpen, setInquiryOpen] = useState(false);
   const [loading, setLoading] = useState(true);
 
   const fallbackProperties = [
@@ -43,10 +43,9 @@ const Properties = () => {
       location: "Sector 36, Rohtak",
       area: 1500,
       area_unit: "sq ft",
-      property_type: "flat",
-      status: "available",
+      propertyType: "Apartment",
+      status: "active",
       images: [buildingImg],
-      map_link: ""
     },
     {
       id: "2",
@@ -55,10 +54,9 @@ const Properties = () => {
       location: "Suncity Heights",
       area: 200,
       area_unit: "sq yd",
-      property_type: "plot",
-      status: "available",
+      propertyType: "Plot",
+      status: "active",
       images: [rohtakGateImg],
-      map_link: ""
     },
     {
       id: "3",
@@ -67,10 +65,9 @@ const Properties = () => {
       location: "Sector 3, Rohtak",
       area: 2500,
       area_unit: "sq ft",
-      property_type: "commercial",
-      status: "available",
+      propertyType: "Commercial",
+      status: "active",
       images: [suncityBuildingImg],
-      map_link: ""
     },
     {
       id: "4",
@@ -79,10 +76,9 @@ const Properties = () => {
       location: "Suncity Projects",
       area: 1100,
       area_unit: "sq ft",
-      property_type: "flat",
-      status: "available",
+      propertyType: "Apartment",
+      status: "active",
       images: [interiorImg],
-      map_link: ""
     }
   ];
 
@@ -93,37 +89,29 @@ const Properties = () => {
   const fetchProperties = async () => {
     setLoading(true);
     try {
-      const { data, error } = await supabase
-        .from("properties")
-        .select("*")
-        .eq("status", "available")
-        .limit(6);
-
-      if (error) throw error;
-
-      if (data && data.length > 0) {
-        const formattedProperties: Property[] = data.map((item: any) => ({
-          id: item.id,
-          title: item.title,
-          price: item.price,
-          location: item.location,
-          area: item.area,
-          area_unit: "sq ft",
-          property_type: item.type || "flat",
-          type: item.type || "flat",
-          status: "available",
-          images: item.images || [],
-          map_link: item.map_link || "",
-        }));
-        setProperties(formattedProperties);
-        setDisplayProperties(formattedProperties);
+      const response = await api.getProperties('active');
+      const formattedProperties: Property[] = response.data.map((item: any) => ({
+        _id: item._id,
+        id: item._id,
+        title: item.title,
+        price: item.price,
+        location: item.location,
+        area: item.area,
+        area_unit: "sq ft",
+        propertyType: item.propertyType,
+        status: item.status,
+        images: item.images || [],
+      }));
+      
+      if (formattedProperties.length > 0) {
+        setProperties(formattedProperties.slice(0, 6));
+        setDisplayProperties(formattedProperties.slice(0, 6));
       } else {
         setProperties(fallbackProperties);
         setDisplayProperties(fallbackProperties);
       }
     } catch (error: any) {
-      const errorMessage = error?.message || error?.toString() || "Unknown error";
-      console.error("Error fetching properties:", errorMessage, error);
+      console.error("Error fetching properties:", error);
       setProperties(fallbackProperties);
       setDisplayProperties(fallbackProperties);
     } finally {
@@ -149,7 +137,7 @@ const Properties = () => {
 
   const handleWhatsAppEnquiry = (propertyTitle: string) => {
     const message = encodeURIComponent(`Hi Vishal Properties, I'm interested in ${propertyTitle}`);
-    window.open(`https://wa.me/919592077899?text=${message}`, "_blank");
+    window.open(`https://wa.me/919876543210?text=${message}`, "_blank");
   };
 
   return (
@@ -159,7 +147,7 @@ const Properties = () => {
           <h2 className="text-4xl font-bold mb-4">Featured Properties</h2>
           <div className="w-20 h-1 bg-gradient-to-r from-primary to-secondary mx-auto mb-4" />
           <p className="text-muted-foreground max-w-2xl mx-auto">
-            Explore our handpicked selection of premium properties in Rohtak
+            Explore our handpicked selection of premium properties
           </p>
         </div>
 
@@ -171,9 +159,9 @@ const Properties = () => {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Properties</SelectItem>
-                <SelectItem value="flat">Flats</SelectItem>
-                <SelectItem value="plot">Plots</SelectItem>
-                <SelectItem value="commercial">Commercial</SelectItem>
+                <SelectItem value="Apartment">Apartments</SelectItem>
+                <SelectItem value="Plot">Plots</SelectItem>
+                <SelectItem value="Commercial">Commercial</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -186,7 +174,7 @@ const Properties = () => {
         ) : (
           <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
             {displayProperties.map((property) => (
-              <Card key={property.id} className="overflow-hidden hover:shadow-xl transition-shadow duration-300">
+              <Card key={property._id || property.id} className="overflow-hidden hover:shadow-xl transition-shadow duration-300">
                 <div className="relative h-64 overflow-hidden group">
                   <img
                     src={property.images && property.images.length > 0 ? property.images[0] : buildingImg}
@@ -208,13 +196,15 @@ const Properties = () => {
                   </div>
 
                   <div className="grid grid-cols-2 gap-4 mb-6">
-                    <div className="flex items-center gap-2">
-                      <Maximize className="h-4 w-4 text-primary" />
-                      <span className="text-sm">{property.area} {property.area_unit || "sq ft"}</span>
-                    </div>
+                    {property.area && (
+                      <div className="flex items-center gap-2">
+                        <Maximize className="h-4 w-4 text-primary" />
+                        <span className="text-sm">{property.area} {property.area_unit || "sq ft"}</span>
+                      </div>
+                    )}
                     <div className="flex items-center gap-2">
                       <Home className="h-4 w-4 text-primary" />
-                      <span className="text-sm capitalize">{property.property_type || property.type || "flat"}</span>
+                      <span className="text-sm capitalize">{property.propertyType || "Property"}</span>
                     </div>
                   </div>
 
@@ -224,30 +214,19 @@ const Properties = () => {
                       <span className="text-2xl font-bold text-secondary">{formatPrice(property.price)}</span>
                     </div>
                     <div className="flex gap-2">
-                      {property.map_link && (
-                        <Button
-                          onClick={() => window.open(property.map_link, "_blank")}
-                          variant="outline"
-                          size="sm"
-                        >
-                          <ExternalLink className="h-4 w-4" />
-                        </Button>
-                      )}
                       <Button
                         onClick={() => handleWhatsAppEnquiry(property.title)}
                         variant="outline"
                         size="sm"
-                        className="flex-1"
                       >
-                        Enquire
+                        Inquire
                       </Button>
                       <Button
                         variant="outline"
                         size="sm"
                         asChild
-                        className="flex-1"
                       >
-                        <Link to={`/property/${property.id}`}>Details</Link>
+                        <Link to={`/property/${property._id || property.id}`}>Details</Link>
                       </Button>
                     </div>
                   </div>
@@ -257,25 +236,16 @@ const Properties = () => {
           </div>
         )}
 
-        <div className="text-center mt-12 flex gap-4 justify-center">
+        <div className="text-center mt-12 flex gap-4 justify-center flex-wrap">
           <Button 
             size="lg" 
-            onClick={() => navigate('/properties/all')}
+            onClick={() => navigate('/properties')}
             className="bg-gradient-to-r from-primary to-secondary hover:opacity-90"
           >
             View All Properties
           </Button>
-          <Button 
-            size="lg"
-            variant="outline"
-            onClick={() => setInquiryOpen(true)}
-          >
-            Quick Inquiry
-          </Button>
         </div>
       </div>
-      
-      <InquiryDialog open={inquiryOpen} onOpenChange={setInquiryOpen} />
     </section>
   );
 };
